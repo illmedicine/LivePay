@@ -6,7 +6,10 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "events": "node event-server/server.js",
+    "web:realtime": "node event-server/server.js & expo start --web",
+    "deploy:web": "powershell -ExecutionPolicy Bypass -File ./deploy-web.ps1"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

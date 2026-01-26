@@ -1,10 +1,17 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useSyncExternalStore } from 'react';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { ledger } from '@/constants/LivePayMock';
+import {
+  getLivePayState,
+  ingestLivePayActivityEvent,
+  startLivePayEventMode,
+  startLivePayMockRealtime,
+  subscribeLivePayState,
+} from '@/constants/LivePayMock';
 
 function formatUsd(amount: number) {
   return `$${amount.toFixed(2)}`;
@@ -13,6 +20,61 @@ function formatUsd(amount: number) {
 export default function LedgerScreen() {
   const colorScheme = useColorScheme() ?? 'dark';
   const c = Colors[colorScheme];
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      let es: EventSource | null = null;
+      let cancelled = false;
+
+      (async () => {
+        try {
+          const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+          const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+
+          if (!isLocalhost) {
+            startLivePayMockRealtime();
+            return;
+          }
+
+          const res = await fetch('http://localhost:4317/oauth/google/pairing-token');
+          const json = (await res.json()) as { ok?: boolean; token?: string };
+          if (cancelled) return;
+
+          const token = json && typeof json.token === 'string' ? json.token : '';
+          if (!token) {
+            startLivePayMockRealtime();
+            return;
+          }
+
+          startLivePayEventMode();
+
+          es = new EventSource(`http://localhost:4317/events?token=${encodeURIComponent(token)}`);
+          es.onmessage = (msg) => {
+            try {
+              const event = JSON.parse(msg.data);
+              if (event && typeof event === 'object') {
+                ingestLivePayActivityEvent(event);
+              }
+            } catch {
+              // ignore
+            }
+          };
+        } catch {
+          startLivePayMockRealtime();
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+        if (es) es.close();
+      };
+    }
+
+    startLivePayMockRealtime();
+  }, []);
+
+  const liveState = useSyncExternalStore(subscribeLivePayState, getLivePayState, getLivePayState);
+  const ledger = liveState.ledger;
 
   return (
     <ScrollView style={[styles.screen, { backgroundColor: c.background }]} contentContainerStyle={styles.content}>

@@ -9,6 +9,9 @@ dist/
 web-build/
 expo-env.d.ts
 
+# Netlify local state
+.netlify/
+
 # Native
 .kotlin/
 *.orig.*
@@ -32,6 +35,12 @@ yarn-error.*
 
 # local env files
 .env*.local
+
+# local windows launcher env vars
+windows/.env.ps1
+
+ # Google OAuth client secrets
+ client_secret*.json
 
 # typescript
 *.tsbuildinfo

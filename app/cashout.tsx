@@ -1,11 +1,12 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
+import { useEffect, useSyncExternalStore } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { walletSnapshot } from '@/constants/LivePayMock';
+import { getLivePayState, startLivePayMockRealtime, subscribeLivePayState } from '@/constants/LivePayMock';
 
 function formatUsd(amount: number) {
   return `$${amount.toFixed(2)}`;
@@ -15,6 +16,13 @@ export default function CashOutScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'dark';
   const c = Colors[colorScheme];
+
+  useEffect(() => {
+    startLivePayMockRealtime();
+  }, []);
+
+  const liveState = useSyncExternalStore(subscribeLivePayState, getLivePayState, getLivePayState);
+  const walletSnapshot = liveState.walletSnapshot;
 
   const available = walletSnapshot.todaysEarningsUsd;
 

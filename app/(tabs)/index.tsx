@@ -1,12 +1,20 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
-import { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { activityBreakdown, walletSnapshot } from '@/constants/LivePayMock';
+import { Platform } from 'react-native';
+
+import {
+    getLivePayState,
+    ingestLivePayActivityEvent,
+    startLivePayEventMode,
+    startLivePayMockRealtime,
+    subscribeLivePayState,
+} from '@/constants/LivePayMock';
 
 function formatUsd(amount: number) {
   return `$${amount.toFixed(2)}`;
@@ -16,6 +24,62 @@ export default function WalletScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'dark';
   const c = Colors[colorScheme];
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      let es: EventSource | null = null;
+      let cancelled = false;
+
+      (async () => {
+        try {
+          const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+          const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+
+          if (!isLocalhost) {
+            startLivePayMockRealtime();
+            return;
+          }
+
+          const res = await fetch('http://localhost:4317/oauth/google/pairing-token');
+          const json = (await res.json()) as { ok?: boolean; token?: string };
+          if (cancelled) return;
+
+          const token = json && typeof json.token === 'string' ? json.token : '';
+          if (!token) {
+            startLivePayMockRealtime();
+            return;
+          }
+
+          startLivePayEventMode();
+
+          es = new EventSource(`http://localhost:4317/events?token=${encodeURIComponent(token)}`);
+          es.onmessage = (msg) => {
+            try {
+              const event = JSON.parse(msg.data);
+              if (event && typeof event === 'object') {
+                ingestLivePayActivityEvent(event);
+              }
+            } catch {
+              // ignore
+            }
+          };
+        } catch {
+          startLivePayMockRealtime();
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+        if (es) es.close();
+      };
+    }
+
+    startLivePayMockRealtime();
+  }, []);
+
+  const liveState = useSyncExternalStore(subscribeLivePayState, getLivePayState, getLivePayState);
+  const walletSnapshot = liveState.walletSnapshot;
+  const activityBreakdown = liveState.activityBreakdown;
 
   const dailyEnergyPoints = useMemo(() => {
     const base = walletSnapshot.dailyEnergyUsd;
@@ -30,10 +94,15 @@ export default function WalletScreen() {
       base * 0.9,
       base * 0.5,
     ];
-  }, []);
+  }, [walletSnapshot.dailyEnergyUsd]);
 
   return (
     <ScrollView style={[styles.screen, { backgroundColor: c.background }]} contentContainerStyle={styles.content}>
+      <View style={styles.brandRow}>
+        <Image source={require('../../assets/images/illy-robotic-instruments.png')} style={styles.brandLogo} resizeMode="contain" />
+        <Text style={[styles.brandTagline, { color: 'rgba(245,247,255,0.65)' }]}>LivePay — an Illy Robotic Instrument</Text>
+      </View>
+
       <Text style={[styles.headerTitle, { color: c.text }]}>Your Wallet</Text>
 
       <View style={[styles.heroCard, { backgroundColor: '#111b2e', borderColor: 'rgba(57,255,136,0.22)' }]}>
@@ -126,6 +195,22 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 28,
+  },
+  brandRow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  brandLogo: {
+    width: 140,
+    height: 140,
+  },
+  brandTagline: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    fontStyle: 'italic',
+    letterSpacing: 0.4,
   },
   headerTitle: {
     fontSize: 22,
