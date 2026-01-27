@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LivePay Extension Settings</title>
+    <style>
+      :root { color-scheme: light; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 18px; }
+      .card { max-width: 720px; padding: 16px; border: 1px solid rgba(0,0,0,0.12); border-radius: 12px; }
+      h1 { font-size: 18px; margin: 0 0 12px 0; }
+      p { margin: 0 0 12px 0; color: rgba(0,0,0,0.75); }
+      label { display: block; font-weight: 600; margin-bottom: 6px; }
+      input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.18); font-size: 14px; }
+      .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+      button { padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.18); background: #0b7a3a; color: #fff; font-weight: 700; cursor: pointer; }
+      button.secondary { background: #fff; color: #111; }
+      .status { margin-top: 10px; font-size: 13px; color: rgba(0,0,0,0.75); }
+      code { background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>LivePay Extension Settings</h1>
+      <p>
+        Set the LivePay ingest endpoint used by this browser. Default:
+        <code>http://localhost:4317/ingest</code>
+      </p>
+
+      <label for="endpoint">Ingest endpoint URL</label>
+      <input id="endpoint" type="url" placeholder="http://localhost:4317/ingest" />
+
+      <p style="margin-top: 14px;">
+        Paste the signed pairing token from your LivePay event server. This will be sent as
+        <code>Authorization: Bearer &lt;token&gt;</code>.
+      </p>
+      <label for="token">Pairing token</label>
+      <input id="token" type="password" placeholder="Bearer token" />
+
+      <div class="row">
+        <button id="save">Save</button>
+        <button id="reset" class="secondary">Reset to default</button>
+      </div>
+
+      <div id="status" class="status"></div>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

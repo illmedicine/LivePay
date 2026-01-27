@@ -8,8 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "events": "node event-server/server.js",
-    "web:realtime": "node event-server/server.js & expo start --web",
-    "deploy:web": "powershell -ExecutionPolicy Bypass -File ./deploy-web.ps1"
+    "web:realtime": "node event-server/server.js & expo start --web"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

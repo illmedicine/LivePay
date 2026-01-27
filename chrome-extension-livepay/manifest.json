@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "LivePay Activity Stream",
+  "version": "0.1.0",
+  "description": "Streams browsing/search/YouTube watch activity to a local LivePay event server.",
+  "permissions": ["tabs", "alarms", "storage"],
+  "host_permissions": ["http://localhost:4317/*"],
+  "action": {
+    "default_title": "LivePay"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.instagram.com/*",
+        "*://instagram.com/*",
+        "*://*.snapchat.com/*",
+        "*://snapchat.com/*",
+        "*://*.reddit.com/*",
+        "*://reddit.com/*",
+        "*://*.youtube.com/*",
+        "*://youtube.com/*",
+        "*://*.x.com/*",
+        "*://x.com/*",
+        "*://*.twitter.com/*",
+        "*://twitter.com/*",
+        "*://*.facebook.com/*",
+        "*://facebook.com/*",
+        "*://*.fb.com/*",
+        "*://fb.com/*"
+      ],
+      "js": ["social-media-detector.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
