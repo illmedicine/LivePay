@@ -33,6 +33,7 @@ jobs:
       - name: Export web
         env:
           EXPO_PUBLIC_BASE_URL: /${{ github.event.repository.name }}
+          EXPO_PUBLIC_EVENT_SERVER_URL: ${{ secrets.LIVEPAY_EVENT_SERVER_URL }}
         run: npx expo export --platform web
 
       - name: SPA fallback + disable Jekyll

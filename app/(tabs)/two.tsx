@@ -28,15 +28,15 @@ export default function LedgerScreen() {
 
       (async () => {
         try {
-          const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
-          const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+          // Try to connect to event server (production or local)
+          // Production: uses EXPO_PUBLIC_EVENT_SERVER_URL environment variable
+          // Local: defaults to localhost:4317
+          const eventServerUrl = 
+            typeof process !== 'undefined' && process.env && (process.env as any).EXPO_PUBLIC_EVENT_SERVER_URL
+              ? (process.env as any).EXPO_PUBLIC_EVENT_SERVER_URL
+              : 'http://localhost:4317';
 
-          if (!isLocalhost) {
-            startLivePayMockRealtime();
-            return;
-          }
-
-          const res = await fetch('http://localhost:4317/oauth/google/pairing-token');
+          const res = await fetch(`${eventServerUrl}/oauth/google/pairing-token`);
           const json = (await res.json()) as { ok?: boolean; token?: string };
           if (cancelled) return;
 
@@ -48,7 +48,7 @@ export default function LedgerScreen() {
 
           startLivePayEventMode();
 
-          es = new EventSource(`http://localhost:4317/events?token=${encodeURIComponent(token)}`);
+          es = new EventSource(`${eventServerUrl}/events?token=${encodeURIComponent(token)}`);
           es.onmessage = (msg) => {
             try {
               const event = JSON.parse(msg.data);
@@ -57,6 +57,13 @@ export default function LedgerScreen() {
               }
             } catch {
               // ignore
+            }
+          };
+          
+          es.onerror = () => {
+            if (es) es.close();
+            if (!cancelled) {
+              startLivePayMockRealtime();
             }
           };
         } catch {
