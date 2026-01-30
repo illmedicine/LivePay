@@ -217,6 +217,7 @@ function diffSignals(previous: ActivitySignals, next: ActivitySignals): Activity
 }
 
 function computeEarningsDeltaUsd(delta: ActivitySignals) {
+  const sitesUsd = delta.sitesVisited * 0.0005;
   const queriesUsd = delta.searchQueries * 0.003;
   const domainsUsd = delta.uniqueDomains * 0.0005;
   const areasUsd = delta.areaExplorationScore * 0.0002;
@@ -229,14 +230,15 @@ function computeEarningsDeltaUsd(delta: ActivitySignals) {
   const socialVisitsUsd = delta.socialVisits * 0.001;
   const socialMinutesUsd = delta.socialMinutes * 0.0008;
 
-  return round2(queriesUsd + domainsUsd + areasUsd + commerceUsd + videosUsd + minutesUsd + socialVisitsUsd + socialMinutesUsd);
+  return round2(sitesUsd + queriesUsd + domainsUsd + areasUsd + commerceUsd + videosUsd + minutesUsd + socialVisitsUsd + socialMinutesUsd);
 }
 
 function computeActivityBreakdown(signals: ActivitySignals): ActivityCategory[] {
   const ytLabel = `Videos: ${signals.videosWatched}, Watch: ${signals.watchMinutes} min • Views: ${round2(signals.youtube.illmedicine.viewHours + signals.youtube.illmedicineai.viewHours)}h`;
 
   const onlineUsdRaw = round2(
-    signals.searchQueries * 0.003 +
+    signals.sitesVisited * 0.0005 +
+      signals.searchQueries * 0.003 +
       signals.uniqueDomains * 0.0005 +
       signals.areaExplorationScore * 0.0002 +
       signals.socialVisits * 0.001 +
