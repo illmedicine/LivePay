@@ -1,10 +1,12 @@
-const DEFAULT_ENDPOINT = 'http://localhost:4317/ingest';
+const DEFAULT_ENDPOINT = 'indexeddb'; // Use browser storage instead of server
 let cachedEndpoint = DEFAULT_ENDPOINT;
 let cachedPairingToken = '';
 
 chrome.storage.sync.get(['livepayEndpoint', 'livepayPairingToken'], (res) => {
   if (res && typeof res.livepayEndpoint === 'string' && res.livepayEndpoint.trim()) {
     cachedEndpoint = res.livepayEndpoint.trim();
+  } else {
+    cachedEndpoint = DEFAULT_ENDPOINT;
   }
 
   if (res && typeof res.livepayPairingToken === 'string' && res.livepayPairingToken.trim()) {
@@ -35,7 +37,35 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 function postEvent(payload) {
-  if (!cachedPairingToken) return;
+  if (cachedEndpoint === 'indexeddb') {
+    // Save to IndexedDB for GitHub Pages access
+    const dbRequest = indexedDB.open('livepay-events', 1);
+    
+    dbRequest.onerror = () => console.error('Failed to open IndexedDB');
+    
+    dbRequest.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('events')) {
+        db.createObjectStore('events', { keyPath: 'id' });
+      }
+    };
+    
+    dbRequest.onsuccess = (event) => {
+      const db = event.target.result;
+      const transaction = db.transaction(['events'], 'readwrite');
+      const store = transaction.objectStore('events');
+      const eventData = {
+        ...payload,
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        savedAt: Date.now(),
+      };
+      store.add(eventData);
+    };
+    return Promise.resolve();
+  }
+  
+  // Fallback to HTTP endpoint if configured
+  if (!cachedPairingToken) return Promise.resolve();
   return fetch(cachedEndpoint, {
     method: 'POST',
     headers: {

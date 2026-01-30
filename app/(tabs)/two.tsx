@@ -23,57 +23,91 @@ export default function LedgerScreen() {
 
   useEffect(() => {
     if (Platform.OS === 'web') {
-      let es: EventSource | null = null;
+      let unsubscribe: (() => void) | null = null;
       let cancelled = false;
 
       (async () => {
         try {
-          // Try to connect to event server (production or local)
-          // Production: uses EXPO_PUBLIC_EVENT_SERVER_URL environment variable
-          // Local: defaults to localhost:4317
+          // Import browser storage module
+          const { watchEvents, getEvents } = await import('@/constants/BrowserStorage');
+          
+          // Try to get pairing token from event server first (for backward compatibility)
           const eventServerUrl = 
             typeof process !== 'undefined' && process.env && (process.env as any).EXPO_PUBLIC_EVENT_SERVER_URL
               ? (process.env as any).EXPO_PUBLIC_EVENT_SERVER_URL
               : 'http://localhost:4317';
 
-          const res = await fetch(`${eventServerUrl}/oauth/google/pairing-token`);
-          const json = (await res.json()) as { ok?: boolean; token?: string };
-          if (cancelled) return;
-
-          const token = json && typeof json.token === 'string' ? json.token : '';
-          if (!token) {
-            startLivePayMockRealtime();
-            return;
+          let useEventServer = false;
+          try {
+            const res = await fetch(`${eventServerUrl}/oauth/google/pairing-token`, {
+              signal: AbortSignal.timeout(2000),
+            });
+            const json = (await res.json()) as { ok?: boolean; token?: string };
+            useEventServer = json && typeof json.token === 'string' && json.token;
+          } catch {
+            // Event server not available, use browser storage
           }
 
-          startLivePayEventMode();
+          if (useEventServer && !cancelled) {
+            // Connect to event server if available
+            const token = (await (await fetch(`${eventServerUrl}/oauth/google/pairing-token`)).json()).token;
+            startLivePayEventMode();
 
-          es = new EventSource(`${eventServerUrl}/events?token=${encodeURIComponent(token)}`);
-          es.onmessage = (msg) => {
-            try {
-              const event = JSON.parse(msg.data);
-              if (event && typeof event === 'object') {
-                ingestLivePayActivityEvent(event);
+            const es = new EventSource(`${eventServerUrl}/events?token=${encodeURIComponent(token)}`);
+            es.onmessage = (msg) => {
+              try {
+                const event = JSON.parse(msg.data);
+                if (event && typeof event === 'object') {
+                  ingestLivePayActivityEvent(event);
+                }
+              } catch {
+                // ignore
               }
-            } catch {
-              // ignore
-            }
-          };
-          
-          es.onerror = () => {
-            if (es) es.close();
-            if (!cancelled) {
-              startLivePayMockRealtime();
-            }
-          };
-        } catch {
-          startLivePayMockRealtime();
+            };
+            
+            es.onerror = () => {
+              es.close();
+            };
+          } else if (!cancelled) {
+            // Use browser storage (Chrome extension via IndexedDB)
+            startLivePayEventMode();
+            
+            unsubscribe = await watchEvents(async (events) => {
+              // Get events since last processed
+              for (const event of events) {
+                // Convert IndexedDB event format to activity event format
+                const activityEvent = {
+                  source: event.source || 'chrome',
+                  type: event.type,
+                  domain: event.domain,
+                  url: event.url,
+                  query: event.query,
+                  platform: event.platform,
+                  minutes: event.minutes,
+                  mediaPlaying: event.mediaPlaying,
+                  videoId: event.videoId,
+                  handle: event.handle,
+                  subscriberCount: event.subscriberCount,
+                  viewHours: event.viewHours,
+                };
+                
+                if (activityEvent.type) {
+                  ingestLivePayActivityEvent(activityEvent);
+                }
+              }
+            });
+          }
+        } catch (error) {
+          // Fallback to mock data if anything goes wrong
+          if (!cancelled) {
+            startLivePayMockRealtime();
+          }
         }
       })();
 
       return () => {
         cancelled = true;
-        if (es) es.close();
+        if (unsubscribe) unsubscribe();
       };
     }
 
