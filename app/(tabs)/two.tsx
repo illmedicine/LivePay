@@ -1,16 +1,16 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { useEffect, useSyncExternalStore } from 'react';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { Text } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import {
-  getLivePayState,
-  ingestLivePayActivityEvent,
-  startLivePayEventMode,
-  startLivePayMockRealtime,
-  subscribeLivePayState,
+    getLivePayState,
+    ingestLivePayActivityEvent,
+    startLivePayEventMode,
+    startLivePayMockRealtime,
+    subscribeLivePayState,
 } from '@/constants/LivePayMock';
 
 function formatUsd(amount: number) {
@@ -75,6 +75,14 @@ export default function LedgerScreen() {
 
   const liveState = useSyncExternalStore(subscribeLivePayState, getLivePayState, getLivePayState);
   const ledger = liveState.ledger;
+  const [displayCount, setDisplayCount] = useState(10);
+
+  const displayedLedger = ledger.slice(0, displayCount);
+  const hasMore = ledger.length > displayCount;
+
+  const loadMore = () => {
+    setDisplayCount(prev => Math.min(prev + 10, ledger.length));
+  };
 
   return (
     <ScrollView style={[styles.screen, { backgroundColor: c.background }]} contentContainerStyle={styles.content}>
@@ -92,7 +100,7 @@ export default function LedgerScreen() {
 
       <Text style={[styles.sectionTitle, { color: c.text }]}>Recent Transactions</Text>
       <View style={styles.list}>
-        {ledger.map((entry) => (
+        {displayedLedger.map((entry) => (
           <View key={entry.id} style={[styles.card, { backgroundColor: '#111b2e', borderColor: 'rgba(255,255,255,0.06)' }]}>
             <View style={styles.cardTop}>
               <View style={styles.cardTopLeft}>
@@ -135,6 +143,11 @@ export default function LedgerScreen() {
             </View>
           </View>
         ))}
+        {hasMore && (
+          <TouchableOpacity style={[styles.loadMoreButton, { backgroundColor: '#111b2e', borderColor: 'rgba(255,255,255,0.06)' }]} onPress={loadMore}>
+            <Text style={[styles.loadMoreText, { color: '#39ff88' }]}>Load More</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </ScrollView>
   );
@@ -269,5 +282,16 @@ const styles = StyleSheet.create({
   hashText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  loadMoreButton: {
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  loadMoreText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

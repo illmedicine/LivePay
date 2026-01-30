@@ -636,9 +636,11 @@ export function ingestLivePayActivityEvent(event: LivePayActivityEvent) {
     }
   }
   if (event.type === 'visit') {
-    if (domain && seenDomains.has(domain) && deltaSignals.uniqueDomains === 0) {
-      // no-op
-    } else if (deltaSignals.uniqueDomains > 0) {
+    // Always create a ledger entry for website visits
+    const siteLabel = domain ?? 'unknown site';
+    pushLedgerEntry({ category: 'Browsing & Search', intent: `Visited: ${siteLabel}`, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), sitesVisited: 1 }) });
+    
+    if (deltaSignals.uniqueDomains > 0) {
       pushLedgerEntry({ category: 'Browsing & Search', intent: `New domain: ${domain ?? 'unknown'}`, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), uniqueDomains: deltaSignals.uniqueDomains }) });
     }
     if (deltaSignals.areaExplorationScore > 0) {
