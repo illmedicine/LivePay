@@ -426,7 +426,7 @@ export function startLivePayMockRealtime(options?: { intervalMs?: number }) {
       ledger: liveLedger,
     };
 
-    pushLedgerEntry({ category: 'Daily Energy', intent: 'Realtime accrual', saleUsd: deltaUsd });
+    pushLedgerEntry({ category: 'Daily Energy', intent: 'Realtime accrual', source: 'Daily Summary', saleUsd: deltaUsd });
     emit();
   }, intervalMs);
 }
@@ -691,6 +691,7 @@ export const ledger: LedgerEntry[] = [
     userSplitUsd: 3.83,
     meshSplitUsd: 0.67,
     resaleRoyaltyUsd: 0.12,
+    source: 'google.com',
     hash: '0x8f3a…b21c',
   },
   {
@@ -703,6 +704,7 @@ export const ledger: LedgerEntry[] = [
     saleUsd: 1.4,
     userSplitUsd: 1.19,
     meshSplitUsd: 0.21,
+    source: 'instagram.com',
     hash: '0x2ac1…44d0',
   },
   {
@@ -715,6 +717,7 @@ export const ledger: LedgerEntry[] = [
     saleUsd: 0.05,
     userSplitUsd: 0.04,
     meshSplitUsd: 0.01,
+    source: 'weather.com',
     hash: '0x9d10…7f3e',
   },
 ];
