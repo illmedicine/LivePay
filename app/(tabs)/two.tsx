@@ -106,6 +106,9 @@ export default function LedgerScreen() {
               <View style={styles.cardTopLeft}>
                 <Text style={[styles.cardTitle, { color: c.text }]}>{entry.intent}</Text>
                 <Text style={[styles.cardSub, { color: 'rgba(245,247,255,0.65)' }]}>{entry.category}</Text>
+                {entry.source && (
+                  <Text style={[styles.cardSource, { color: 'rgba(57,255,136,0.8)' }]}>Source: {entry.source}</Text>
+                )}
               </View>
               <View style={[styles.badge, { backgroundColor: 'rgba(57,255,136,0.12)', borderColor: 'rgba(57,255,136,0.28)' }]}>
                 <Text style={[styles.badgeText, { color: '#39ff88' }]}>{entry.status}</Text>
@@ -223,6 +226,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: 12,
     fontWeight: '600',
+  },
+  cardSource: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '500',
   },
   badge: {
     borderRadius: 999,

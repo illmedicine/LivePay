@@ -18,6 +18,7 @@ export type LedgerEntry = {
   meshSplitUsd: number;
   resaleRoyaltyUsd?: number;
   hash: string;
+  source?: string;
 };
 
 export type WalletSnapshot = {
@@ -354,7 +355,7 @@ function ensureSameDay() {
   }
 }
 
-function pushLedgerEntry(args: { category: string; intent: string; saleUsd: number; buyer?: string }) {
+function pushLedgerEntry(args: { category: string; intent: string; saleUsd: number; buyer?: string; source?: string }) {
   if (args.saleUsd <= 0) return;
 
   const ts = new Date().toISOString();
@@ -371,6 +372,7 @@ function pushLedgerEntry(args: { category: string; intent: string; saleUsd: numb
     saleUsd: round2(args.saleUsd),
     userSplitUsd,
     meshSplitUsd,
+    source: args.source,
     hash: `0x${Math.random().toString(16).slice(2, 6)}…${Math.random().toString(16).slice(2, 6)}`,
   };
 
@@ -632,38 +634,38 @@ export function ingestLivePayActivityEvent(event: LivePayActivityEvent) {
   };
 
   if (event.type === 'search') {
-    pushLedgerEntry({ category: 'Browsing & Search', intent: `Query: ${event.query}`, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), searchQueries: 1 }) });
+    pushLedgerEntry({ category: 'Browsing & Search', intent: `Query: ${event.query}`, source: event.query, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), searchQueries: 1 }) });
     if (isCommerceQuery(event.query)) {
-      pushLedgerEntry({ category: 'E-Commerce Interest', intent: `Shopping search: ${event.query}`, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), commerceIntents: 1 }) });
+      pushLedgerEntry({ category: 'E-Commerce Interest', intent: `Shopping search: ${event.query}`, source: event.query, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), commerceIntents: 1 }) });
     }
   }
   if (event.type === 'visit') {
     // Always create a ledger entry for website visits
     const siteLabel = domain ?? 'unknown site';
-    pushLedgerEntry({ category: 'Browsing & Search', intent: `Visited: ${siteLabel}`, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), sitesVisited: 1 }) });
+    pushLedgerEntry({ category: 'Browsing & Search', intent: `Visited: ${siteLabel}`, source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), sitesVisited: 1 }) });
     
     if (deltaSignals.uniqueDomains > 0) {
-      pushLedgerEntry({ category: 'Browsing & Search', intent: `New domain: ${domain ?? 'unknown'}`, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), uniqueDomains: deltaSignals.uniqueDomains }) });
+      pushLedgerEntry({ category: 'Browsing & Search', intent: `New domain: ${domain ?? 'unknown'}`, source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), uniqueDomains: deltaSignals.uniqueDomains }) });
     }
     if (deltaSignals.areaExplorationScore > 0) {
-      pushLedgerEntry({ category: 'Browsing & Search', intent: `Area: ${area}`, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), areaExplorationScore: deltaSignals.areaExplorationScore }) });
+      pushLedgerEntry({ category: 'Browsing & Search', intent: `Area: ${area}`, source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), areaExplorationScore: deltaSignals.areaExplorationScore }) });
     }
   }
   if (event.type === 'youtube_watch') {
-    pushLedgerEntry({ category: 'Content Streaming', intent: 'Video watched', saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), videosWatched: 1 }) });
-    pushLedgerEntry({ category: 'Content Streaming', intent: 'Watch time (1 min)', saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), watchMinutes: 1 }) });
+    pushLedgerEntry({ category: 'Content Streaming', intent: 'Video watched', source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), videosWatched: 1 }) });
+    pushLedgerEntry({ category: 'Content Streaming', intent: 'Watch time (1 min)', source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), watchMinutes: 1 }) });
   }
   if (event.type === 'youtube_watch_minute') {
     const minutes = typeof event.minutes === 'number' && event.minutes > 0 ? Math.floor(event.minutes) : 1;
-    pushLedgerEntry({ category: 'Content Streaming', intent: `Watch time (${minutes} min)`, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), watchMinutes: minutes }) });
+    pushLedgerEntry({ category: 'Content Streaming', intent: `Watch time (${minutes} min)`, source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), watchMinutes: minutes }) });
   }
   if (event.type === 'youtube_oauth_stats') {
-    pushLedgerEntry({ category: 'Social Media', intent: `YouTube stats update: ${event.handle}`, saleUsd: deltaUsd, buyer: 'Google OAuth' });
+    pushLedgerEntry({ category: 'Social Media', intent: `YouTube stats update: ${event.handle}`, source: event.handle, saleUsd: deltaUsd, buyer: 'Google OAuth' });
   }
 
   if (event.type === 'social_visit') {
     const label = event.platform ? event.platform : domain ? domain : 'social';
-    pushLedgerEntry({ category: 'Social Media', intent: `Visit: ${label}`, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), socialVisits: 1 }) });
+    pushLedgerEntry({ category: 'Social Media', intent: `Visit: ${label}`, source: label, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), socialVisits: 1 }) });
   }
 
   if (event.type === 'social_minute') {
@@ -671,7 +673,7 @@ export function ingestLivePayActivityEvent(event: LivePayActivityEvent) {
     const effectiveMinutes = baseMinutes * (event.mediaPlaying ? 2 : 1);
     const label = event.platform ? event.platform : domain ? domain : 'social';
     const intent = event.mediaPlaying ? `Time on ${label} (${effectiveMinutes} min, media)` : `Time on ${label} (${effectiveMinutes} min)`;
-    pushLedgerEntry({ category: 'Social Media', intent, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), socialMinutes: effectiveMinutes }) });
+    pushLedgerEntry({ category: 'Social Media', intent, source: label, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), socialMinutes: effectiveMinutes }) });
   }
 
   emit();
