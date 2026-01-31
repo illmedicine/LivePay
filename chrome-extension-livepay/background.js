@@ -63,10 +63,12 @@ function postEvent(payload) {
       const db = event.target.result;
       const transaction = db.transaction(['events'], 'readwrite');
       const store = transaction.objectStore('events');
+      const now = Date.now();
       const eventData = {
         ...payload,
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        savedAt: Date.now(),
+        id: `${now}-${Math.random().toString(16).slice(2)}`,
+        timestamp: now,
+        savedAt: now,
       };
       const addRequest = store.add(eventData);
       

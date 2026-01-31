@@ -97,7 +97,8 @@ export async function watchEvents(callback: (events: any[]) => void): Promise<()
 
   // Initial load
   const events = await getEvents();
-  lastSeenTimestamp = Math.max(...events.map(e => e.savedAt || 0), 0);
+  lastSeenTimestamp = Math.max(...events.map(e => e.savedAt || e.timestamp || 0), 0);
+  console.log('🔍 BrowserStorage: Initial load - found', events.length, 'events, lastSeen:', lastSeenTimestamp);
   callback(events);
 
   // Poll for new events every 1000ms (reduced from 500ms to improve performance)
@@ -106,14 +107,15 @@ export async function watchEvents(callback: (events: any[]) => void): Promise<()
       const newEvents = await getEvents();
       
       // Only call callback if there are new events since last check
-      const hasNewEvents = newEvents.some(e => (e.savedAt || 0) > lastSeenTimestamp);
+      const hasNewEvents = newEvents.some(e => (e.savedAt || e.timestamp || 0) > lastSeenTimestamp);
       
       if (hasNewEvents) {
-        lastSeenTimestamp = Math.max(...newEvents.map(e => e.savedAt || 0), lastSeenTimestamp);
+        lastSeenTimestamp = Math.max(...newEvents.map(e => e.savedAt || e.timestamp || 0), lastSeenTimestamp);
+        console.log('🔄 BrowserStorage: Found', newEvents.length, 'events, new since last check');
         debounceCallback(callback, newEvents);
       }
     } catch (error) {
-      console.error('Error watching events:', error);
+      console.error('❌ Error watching events:', error);
     }
   }, 1000); // Increased interval from 500ms to 1000ms
 

@@ -98,6 +98,7 @@ export default function LedgerScreen() {
             });
           }
         } catch (error) {
+          console.error('❌ Error setting up event watchers:', error);
           // Fallback to mock data if anything goes wrong
           if (!cancelled) {
             startLivePayMockRealtime();
@@ -109,9 +110,10 @@ export default function LedgerScreen() {
         cancelled = true;
         if (unsubscribe) unsubscribe();
       };
+    } else {
+      // Non-web platforms use mock data
+      startLivePayMockRealtime();
     }
-
-    startLivePayMockRealtime();
   }, []);
 
   const liveState = useSyncExternalStore(subscribeLivePayState, getLivePayState, getLivePayState);
