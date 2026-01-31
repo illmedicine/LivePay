@@ -1,6 +1,6 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/Themed';
@@ -26,6 +26,7 @@ export default function WalletScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'dark';
   const c = Colors[colorScheme];
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -128,15 +129,18 @@ export default function WalletScreen() {
             if (!hasExtensionData && !cancelled) {
               console.log('ℹ️ LivePay App: No connector data found. Starting demo mode with mock data.');
               console.log('💡 Install the Chrome extension to see real earnings!');
+              setIsDemoMode(true);
               startLivePayMockRealtime();
             } else if (hasExtensionData) {
               console.log('✅ LivePay App: Using real data from connector. Mock data disabled.');
+              setIsDemoMode(false);
             }
           }, 1000); // Wait 1 second to ensure extension data is checked
           
         } catch (err) {
           console.error('❌ LivePay App: Error setting up event watchers', err);
           // Only fall back to mock if there's an error
+          setIsDemoMode(true);
           startLivePayMockRealtime();
         }
       })();
@@ -148,6 +152,7 @@ export default function WalletScreen() {
       };
     } else {
       // For non-web platforms (iOS/Android), use mock data
+      setIsDemoMode(true);
       startLivePayMockRealtime();
     }
   }, []);
@@ -173,6 +178,15 @@ export default function WalletScreen() {
 
   return (
     <ScrollView style={[styles.screen, { backgroundColor: c.background }]} contentContainerStyle={styles.content}>
+      {isDemoMode && (
+        <View style={styles.demoBanner}>
+          <FontAwesome name="info-circle" size={16} color="#ffa500" style={styles.demoIcon} />
+          <View style={styles.demoTextContainer}>
+            <Text style={styles.demoTitle}>Demo Mode</Text>
+            <Text style={styles.demoText}>Install the Chrome extension to see real earnings</Text>
+          </View>
+        </View>
+      )}
       <View style={styles.brandRow}>
         <Image source={require('../../assets/images/illy-robotic-instruments.png')} style={styles.brandLogo} resizeMode="contain" />
         <Text style={[styles.brandTagline, { color: 'rgba(245,247,255,0.65)' }]}>LivePay — an Illy Robotic Instrument</Text>
@@ -447,5 +461,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
     letterSpacing: 0.2,
+  },
+  demoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 165, 0, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 165, 0, 0.4)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  demoIcon: {
+    marginTop: 2,
+  },
+  demoTextContainer: {
+    flex: 1,
+  },
+  demoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffa500',
+    marginBottom: 2,
+  },
+  demoText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255, 165, 0, 0.9)',
   },
 });
