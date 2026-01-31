@@ -2,6 +2,8 @@ const DEFAULT_ENDPOINT = 'indexeddb'; // Use browser storage instead of server
 let cachedEndpoint = DEFAULT_ENDPOINT;
 let cachedPairingToken = '';
 
+console.log('✨ LivePay Activity Stream Extension started');
+
 chrome.storage.sync.get(['livepayEndpoint', 'livepayPairingToken'], (res) => {
   if (res && typeof res.livepayEndpoint === 'string' && res.livepayEndpoint.trim()) {
     cachedEndpoint = res.livepayEndpoint.trim();
@@ -12,6 +14,8 @@ chrome.storage.sync.get(['livepayEndpoint', 'livepayPairingToken'], (res) => {
   if (res && typeof res.livepayPairingToken === 'string' && res.livepayPairingToken.trim()) {
     cachedPairingToken = res.livepayPairingToken.trim();
   }
+  
+  console.log('🔧 LivePay config loaded - Endpoint:', cachedEndpoint);
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -37,15 +41,20 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 function postEvent(payload) {
+  console.log('📊 LivePay: Posting event', payload);
+  
   if (cachedEndpoint === 'indexeddb') {
     // Save to IndexedDB for GitHub Pages access
     const dbRequest = indexedDB.open('livepay-events', 1);
     
-    dbRequest.onerror = () => console.error('Failed to open IndexedDB');
+    dbRequest.onerror = () => {
+      console.error('❌ LivePay: Failed to open IndexedDB', dbRequest.error);
+    };
     
     dbRequest.onupgradeneeded = (event) => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains('events')) {
+        console.log('📦 LivePay: Creating IndexedDB object store');
         db.createObjectStore('events', { keyPath: 'id' });
       }
     };
@@ -59,7 +68,15 @@ function postEvent(payload) {
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         savedAt: Date.now(),
       };
-      store.add(eventData);
+      const addRequest = store.add(eventData);
+      
+      addRequest.onsuccess = () => {
+        console.log('✅ LivePay: Event saved to IndexedDB', eventData.id);
+      };
+      
+      addRequest.onerror = () => {
+        console.error('❌ LivePay: Failed to save event', addRequest.error);
+      };
     };
     return Promise.resolve();
   }
@@ -219,7 +236,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   lastSeenByTab.set(tabId, url);
 
   const payload = classify(url);
-  if (!payload) return;
+  if (!payload) {
+    console.log('🔗 LivePay: Unclassified URL', url);
+    return;
+  }
+
+  console.log('🎯 LivePay: Tracking', payload.type, 'at', payload.domain);
 
   if (payload.type === 'youtube_watch') {
     activeYouTubeWatchTabs.set(tabId, payload.videoId);
