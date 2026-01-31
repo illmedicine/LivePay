@@ -8,6 +8,7 @@ const STORE_NAME = 'events';
 const DB_VERSION = 1;
 
 let db: IDBDatabase | null = null;
+let lastSeenTimestamp = 0;
 
 export async function initBrowserStorage(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -50,14 +51,7 @@ export async function getEvents(since?: number): Promise<any[]> {
   return new Promise((resolve, reject) => {
     const transaction = database.transaction([STORE_NAME], 'readonly');
     const store = transaction.objectStore(STORE_NAME);
-    const index = store.index('timestamp');
-
-    let request;
-    if (since) {
-      request = index.getAll(IDBKeyRange.lowerBound(since));
-    } else {
-      request = store.getAll();
-    }
+    const request = store.getAll();
 
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
@@ -78,18 +72,55 @@ export async function clearEvents(): Promise<void> {
   });
 }
 
+// Debounce wrapper to prevent excessive updates
+let pendingCallback: ((events: any[]) => void) | null = null;
+let debounceTimer: number | null = null;
+
+function debounceCallback(callback: (events: any[]) => void, events: any[]) {
+  pendingCallback = () => callback(events);
+  
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+  }
+  
+  debounceTimer = window.setTimeout(() => {
+    if (pendingCallback) {
+      pendingCallback(events);
+      pendingCallback = null;
+    }
+    debounceTimer = null;
+  }, 100); // Batch updates within 100ms
+}
+
 export async function watchEvents(callback: (events: any[]) => void): Promise<() => void> {
   await initBrowserStorage();
 
   // Initial load
   const events = await getEvents();
+  lastSeenTimestamp = Math.max(...events.map(e => e.savedAt || 0), 0);
   callback(events);
 
-  // Poll for new events every 500ms
-  const interval = setInterval(async () => {
-    const newEvents = await getEvents();
-    callback(newEvents);
-  }, 500);
+  // Poll for new events every 1000ms (reduced from 500ms to improve performance)
+  const interval = window.setInterval(async () => {
+    try {
+      const newEvents = await getEvents();
+      
+      // Only call callback if there are new events since last check
+      const hasNewEvents = newEvents.some(e => (e.savedAt || 0) > lastSeenTimestamp);
+      
+      if (hasNewEvents) {
+        lastSeenTimestamp = Math.max(...newEvents.map(e => e.savedAt || 0), lastSeenTimestamp);
+        debounceCallback(callback, newEvents);
+      }
+    } catch (error) {
+      console.error('Error watching events:', error);
+    }
+  }, 1000); // Increased interval from 500ms to 1000ms
 
-  return () => clearInterval(interval);
+  return () => {
+    clearInterval(interval);
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+  };
 }

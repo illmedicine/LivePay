@@ -393,7 +393,7 @@ export function subscribeLivePayState(listener: () => void) {
 
 export function startLivePayMockRealtime(options?: { intervalMs?: number }) {
   if (timer) return;
-  const intervalMs = options?.intervalMs ?? 1000;
+  const intervalMs = options?.intervalMs ?? 2000; // Increased from 1000ms to 2000ms to reduce performance violations
 
   scheduleDailyReset();
 
