@@ -112,20 +112,29 @@ type ActivitySignals = {
 };
 
 export type LivePayActivityEvent =
-  | { source?: string; type: 'visit'; domain?: string; url?: string }
-  | { source?: string; type: 'search'; provider?: string; query: string; domain?: string; url?: string }
-  | { source?: string; type: 'social_visit'; platform?: string; domain?: string; url?: string }
-  | { source?: string; type: 'social_minute'; platform?: string; minutes?: number; mediaPlaying?: boolean; domain?: string; url?: string }
-  | { source?: string; type: 'youtube_watch'; videoId?: string; domain?: string; url?: string }
-  | { source?: string; type: 'youtube_watch_minute'; minutes?: number; domain?: string; url?: string }
-  | { source?: string; type: 'youtube_channel'; handle: string; domain?: string; url?: string }
+  | { source?: string; type: 'visit'; domain?: string; url?: string; payout?: PayoutInfo }
+  | { source?: string; type: 'search'; provider?: string; query: string; domain?: string; url?: string; payout?: PayoutInfo }
+  | { source?: string; type: 'social_visit'; platform?: string; domain?: string; url?: string; payout?: PayoutInfo }
+  | { source?: string; type: 'social_minute'; platform?: string; minutes?: number; mediaPlaying?: boolean; domain?: string; url?: string; payout?: PayoutInfo }
+  | { source?: string; type: 'youtube_watch'; videoId?: string; domain?: string; url?: string; payout?: PayoutInfo }
+  | { source?: string; type: 'youtube_watch_minute'; minutes?: number; domain?: string; url?: string; payout?: PayoutInfo }
+  | { source?: string; type: 'youtube_channel'; handle: string; domain?: string; url?: string; payout?: PayoutInfo }
   | {
       source?: string;
       type: 'youtube_oauth_stats';
       handle: string;
       subscriberCount?: number;
       viewHours?: number;
+      payout?: PayoutInfo;
     };
+
+export type PayoutInfo = {
+  userShare: number;
+  infra: number;
+  treasury: number;
+  total: number;
+  categoryName: string;
+};
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -391,6 +400,30 @@ export function subscribeLivePayState(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
+export async function updateWalletFromIndexedDB() {
+  try {
+    // Import dynamically to avoid issues in non-web environments
+    const { getWalletBalance } = await import('./BrowserStorage');
+    const wallet = await getWalletBalance();
+    
+    console.log('💰 LivePay: Updating wallet from IndexedDB', wallet);
+    
+    liveState = {
+      ...liveState,
+      walletSnapshot: {
+        ...liveState.walletSnapshot,
+        dailyEnergyUsd: wallet.balance,
+        todaysEarningsUsd: wallet.balance,
+        lastPayoutLabel: new Date(wallet.lastUpdated).toLocaleString(),
+      },
+    };
+    
+    emit();
+  } catch (error) {
+    console.error('❌ LivePay: Failed to load wallet from IndexedDB', error);
+  }
+}
+
 export function startLivePayMockRealtime(options?: { intervalMs?: number }) {
   if (timer) return;
   const intervalMs = options?.intervalMs ?? 2000; // Increased from 1000ms to 2000ms to reduce performance violations
@@ -441,7 +474,9 @@ export function stopLivePayRealtime() {
 export function startLivePayEventMode() {
   stopLivePayRealtime();
   scheduleDailyReset();
-  resetForNewDay();
+  // Don't reset the ledger - preserve existing events from Chrome extension
+  // Only reset if it's actually a new day
+  ensureSameDay();
   emit();
 }
 
@@ -499,6 +534,10 @@ export function ingestLivePayActivityEvent(event: LivePayActivityEvent) {
 
   const domain = (event as { domain?: string }).domain;
   const area = areaFromDomain(domain);
+  
+  // Use payout information from event if available (from chrome extension with pricing)
+  // Otherwise fall back to legacy calculation
+  const payout = (event as any).payout as PayoutInfo | undefined;
 
   if (event.type === 'visit') {
     nextSignals.sitesVisited += 1;
@@ -621,8 +660,11 @@ export function ingestLivePayActivityEvent(event: LivePayActivityEvent) {
   liveSignals = nextSignals;
 
   const nextBreakdown = computeActivityBreakdown(nextSignals);
-  const deltaUsd = computeEarningsDeltaUsd(deltaSignals);
+  
+  // Use payout if available, otherwise calculate from delta signals
+  const deltaUsd = payout ? payout.userShare : computeEarningsDeltaUsd(deltaSignals);
   const nextTodays = round2(liveState.walletSnapshot.todaysEarningsUsd + deltaUsd);
+  
   liveState = {
     walletSnapshot: {
       ...liveState.walletSnapshot,
@@ -633,47 +675,122 @@ export function ingestLivePayActivityEvent(event: LivePayActivityEvent) {
     ledger: liveLedger,
   };
 
+  // Create ledger entries with proper payout information
   if (event.type === 'search') {
-    pushLedgerEntry({ category: 'Browsing & Search', intent: `Query: ${event.query}`, source: event.query, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), searchQueries: 1 }) });
+    const searchPayout = payout ? payout.total : computeEarningsDeltaUsd({ ...createEmptySignals(), searchQueries: 1 });
+    const categoryLabel = payout ? payout.categoryName : 'Browsing & Search';
+    const sourceDomain = domain || 'search engine';
+    pushLedgerEntry({ 
+      category: categoryLabel, 
+      intent: `Search: "${event.query}" on ${sourceDomain}`, 
+      source: sourceDomain, 
+      saleUsd: searchPayout,
+      buyer: payout ? payout.categoryName : 'Realtime Stream'
+    });
     if (isCommerceQuery(event.query)) {
-      pushLedgerEntry({ category: 'E-Commerce Interest', intent: `Shopping search: ${event.query}`, source: event.query, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), commerceIntents: 1 }) });
+      pushLedgerEntry({ 
+        category: 'E-Commerce Interest', 
+        intent: `Shopping: "${event.query}"`, 
+        source: sourceDomain, 
+        saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), commerceIntents: 1 }) 
+      });
     }
   }
+  
   if (event.type === 'visit') {
-    // Always create a ledger entry for website visits
     const siteLabel = domain ?? 'unknown site';
-    pushLedgerEntry({ category: 'Browsing & Search', intent: `Visited: ${siteLabel}`, source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), sitesVisited: 1 }) });
+    const visitPayout = payout ? payout.total : computeEarningsDeltaUsd({ ...createEmptySignals(), sitesVisited: 1 });
+    const categoryLabel = payout ? payout.categoryName : 'Browsing & Search';
+    pushLedgerEntry({ 
+      category: categoryLabel, 
+      intent: `Site Visit: ${siteLabel}`, 
+      source: siteLabel, 
+      saleUsd: visitPayout,
+      buyer: payout ? payout.categoryName : 'Realtime Stream'
+    });
     
     if (deltaSignals.uniqueDomains > 0) {
-      pushLedgerEntry({ category: 'Browsing & Search', intent: `New domain: ${domain ?? 'unknown'}`, source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), uniqueDomains: deltaSignals.uniqueDomains }) });
+      pushLedgerEntry({ 
+        category: 'Browsing & Search', 
+        intent: `First visit to ${domain ?? 'domain'}`, 
+        source: domain, 
+        saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), uniqueDomains: deltaSignals.uniqueDomains }) 
+      });
     }
     if (deltaSignals.areaExplorationScore > 0) {
-      pushLedgerEntry({ category: 'Browsing & Search', intent: `Area: ${area}`, source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), areaExplorationScore: deltaSignals.areaExplorationScore }) });
+      pushLedgerEntry({ 
+        category: 'Browsing & Search', 
+        intent: `Explored ${area} category`, 
+        source: domain, 
+        saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), areaExplorationScore: deltaSignals.areaExplorationScore }) 
+      });
     }
   }
+  
   if (event.type === 'youtube_watch') {
-    pushLedgerEntry({ category: 'Content Streaming', intent: 'Video watched', source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), videosWatched: 1 }) });
-    pushLedgerEntry({ category: 'Content Streaming', intent: 'Watch time (1 min)', source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), watchMinutes: 1 }) });
+    const watchPayout = payout ? payout.total : computeEarningsDeltaUsd({ ...createEmptySignals(), videosWatched: 1 });
+    const categoryLabel = payout ? payout.categoryName : 'Content Streaming';
+    const videoIdLabel = (event as any).videoId ? ` (${(event as any).videoId})` : '';
+    pushLedgerEntry({ 
+      category: categoryLabel, 
+      intent: `Video watched on ${domain || 'youtube.com'}${videoIdLabel}`, 
+      source: domain || 'youtube.com', 
+      saleUsd: watchPayout,
+      buyer: payout ? payout.categoryName : 'Realtime Stream'
+    });
   }
+  
   if (event.type === 'youtube_watch_minute') {
     const minutes = typeof event.minutes === 'number' && event.minutes > 0 ? Math.floor(event.minutes) : 1;
-    pushLedgerEntry({ category: 'Content Streaming', intent: `Watch time (${minutes} min)`, source: domain, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), watchMinutes: minutes }) });
+    const minutePayout = payout ? payout.total : computeEarningsDeltaUsd({ ...createEmptySignals(), watchMinutes: minutes });
+    const categoryLabel = payout ? payout.categoryName : 'Content Streaming';
+    pushLedgerEntry({ 
+      category: categoryLabel, 
+      intent: `${minutes} min watch time on ${domain || 'youtube.com'}`, 
+      source: domain || 'youtube.com', 
+      saleUsd: minutePayout,
+      buyer: payout ? payout.categoryName : 'Realtime Stream'
+    });
   }
+  
   if (event.type === 'youtube_oauth_stats') {
-    pushLedgerEntry({ category: 'Social Media', intent: `YouTube stats update: ${event.handle}`, source: event.handle, saleUsd: deltaUsd, buyer: 'Google OAuth' });
+    pushLedgerEntry({ 
+      category: 'Social Media', 
+      intent: `YouTube channel: ${event.handle}`, 
+      source: event.handle, 
+      saleUsd: deltaUsd, 
+      buyer: 'Google OAuth' 
+    });
   }
 
   if (event.type === 'social_visit') {
     const label = event.platform ? event.platform : domain ? domain : 'social';
-    pushLedgerEntry({ category: 'Social Media', intent: `Visit: ${label}`, source: label, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), socialVisits: 1 }) });
+    const socialPayout = payout ? payout.total : computeEarningsDeltaUsd({ ...createEmptySignals(), socialVisits: 1 });
+    const categoryLabel = payout ? payout.categoryName : 'Social Media';
+    pushLedgerEntry({ 
+      category: categoryLabel, 
+      intent: `Social visit: ${label}`, 
+      source: domain || label, 
+      saleUsd: socialPayout,
+      buyer: payout ? payout.categoryName : 'Realtime Stream'
+    });
   }
 
   if (event.type === 'social_minute') {
     const baseMinutes = typeof event.minutes === 'number' && event.minutes > 0 ? Math.floor(event.minutes) : 1;
     const effectiveMinutes = baseMinutes * (event.mediaPlaying ? 2 : 1);
     const label = event.platform ? event.platform : domain ? domain : 'social';
-    const intent = event.mediaPlaying ? `Time on ${label} (${effectiveMinutes} min, media)` : `Time on ${label} (${effectiveMinutes} min)`;
-    pushLedgerEntry({ category: 'Social Media', intent, source: label, saleUsd: computeEarningsDeltaUsd({ ...createEmptySignals(), socialMinutes: effectiveMinutes }) });
+    const mediaLabel = event.mediaPlaying ? ' (with media)' : '';
+    const intent = `${effectiveMinutes} min on ${label}${mediaLabel}`;
+    const minutePayout = payout ? payout.total : computeEarningsDeltaUsd({ ...createEmptySignals(), socialMinutes: effectiveMinutes });
+    const categoryLabel = payout ? payout.categoryName : 'Social Media';
+    pushLedgerEntry({ 
+      category: categoryLabel, 
+      intent, 
+      source: domain || label, 
+      saleUsd: minutePayout,
+      buyer: payout ? payout.categoryName : 'Realtime Stream'
+    });
   }
 
   emit();

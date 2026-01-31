@@ -45,3 +45,5 @@ windows/.env.ps1
 # generated native folders
 /ios
 /android
+
+client_secret_*.json

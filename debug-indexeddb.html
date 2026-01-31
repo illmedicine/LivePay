@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LivePay IndexedDB Debug Tool</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #0b1220;
+      color: #f5f7ff;
+    }
+    h1 {
+      color: #39ff88;
+      border-bottom: 2px solid #39ff88;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #39ff88;
+      margin-top: 30px;
+    }
+    button {
+      background: #39ff88;
+      color: #0b1220;
+      border: none;
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      border-radius: 5px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #2de876;
+    }
+    button.danger {
+      background: #ff3939;
+      color: white;
+    }
+    button.danger:hover {
+      background: #e82d2d;
+    }
+    .output {
+      background: #121e33;
+      border: 1px solid rgba(57, 255, 136, 0.22);
+      border-radius: 8px;
+      padding: 15px;
+      margin: 10px 0;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .success {
+      color: #39ff88;
+    }
+    .error {
+      color: #ff3939;
+    }
+    .info {
+      color: #5599ff;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 20px;
+      background: #121e33;
+      border-radius: 8px;
+      border: 1px solid rgba(57, 255, 136, 0.12);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+    }
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid rgba(57, 255, 136, 0.12);
+    }
+    th {
+      background: rgba(57, 255, 136, 0.1);
+      color: #39ff88;
+    }
+    .stat {
+      display: inline-block;
+      margin: 10px 20px 10px 0;
+      font-size: 18px;
+    }
+    .stat-value {
+      color: #39ff88;
+      font-weight: bold;
+      font-size: 24px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 LivePay IndexedDB Debug Tool</h1>
+  <p>Use this tool to inspect and debug LivePay's IndexedDB storage.</p>
+
+  <div class="section">
+    <h2>Database Information</h2>
+    <button onclick="checkDatabase()">🔍 Check Database</button>
+    <div id="dbInfo" class="output"></div>
+  </div>
+
+  <div class="section">
+    <h2>Events Store</h2>
+    <button onclick="viewEvents()">📋 View All Events</button>
+    <button onclick="countEvents()">🔢 Count Events</button>
+    <button class="danger" onclick="clearEvents()">🗑️ Clear Events</button>
+    <div id="eventsOutput" class="output"></div>
+  </div>
+
+  <div class="section">
+    <h2>Wallet Store</h2>
+    <button onclick="viewWallet()">💰 View Wallet</button>
+    <button class="danger" onclick="resetWallet()">🔄 Reset Wallet</button>
+    <div id="walletOutput" class="output"></div>
+  </div>
+
+  <div class="section">
+    <h2>Test Actions</h2>
+    <button onclick="addTestEvent()">➕ Add Test Event</button>
+    <button onclick="addTestEvents()">➕ Add 10 Test Events</button>
+    <button onclick="simulateBrowsing()">🌐 Simulate Browsing Session</button>
+    <div id="testOutput" class="output"></div>
+  </div>
+
+  <div class="section">
+    <h2>Database Management</h2>
+    <button class="danger" onclick="deleteDatabase()">💣 Delete Entire Database</button>
+    <button onclick="reinitializeDatabase()">🔄 Reinitialize Database</button>
+    <div id="managementOutput" class="output"></div>
+  </div>
+
+  <script>
+    const DB_NAME = 'livepay-events';
+    const DB_VERSION = 2;
+
+    function log(message, type = 'info') {
+      const colors = {
+        success: 'success',
+        error: 'error',
+        info: 'info'
+      };
+      return `<div class="${colors[type]}">${message}</div>`;
+    }
+
+    async function openDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains('events')) {
+            db.createObjectStore('events', { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains('wallet')) {
+            db.createObjectStore('wallet', { keyPath: 'id' });
+          }
+        };
+      });
+    }
+
+    async function checkDatabase() {
+      const output = document.getElementById('dbInfo');
+      output.innerHTML = log('Checking database...', 'info');
+      
+      try {
+        const db = await openDB();
+        let html = log('✅ Database opened successfully', 'success');
+        html += log(`Database Name: ${db.name}`, 'info');
+        html += log(`Database Version: ${db.version}`, 'info');
+        html += log(`Object Stores: ${Array.from(db.objectStoreNames).join(', ')}`, 'info');
+        
+        // Check if stores exist
+        const hasEvents = db.objectStoreNames.contains('events');
+        const hasWallet = db.objectStoreNames.contains('wallet');
+        
+        html += log(`Events Store: ${hasEvents ? '✅ Exists' : '❌ Missing'}`, hasEvents ? 'success' : 'error');
+        html += log(`Wallet Store: ${hasWallet ? '✅ Exists' : '❌ Missing'}`, hasWallet ? 'success' : 'error');
+        
+        db.close();
+        output.innerHTML = html;
+      } catch (error) {
+        output.innerHTML = log(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function viewEvents() {
+      const output = document.getElementById('eventsOutput');
+      output.innerHTML = log('Loading events...', 'info');
+      
+      try {
+        const db = await openDB();
+        const tx = db.transaction(['events'], 'readonly');
+        const store = tx.objectStore('events');
+        const request = store.getAll();
+        
+        request.onsuccess = () => {
+          const events = request.result;
+          let html = log(`Found ${events.length} events`, 'success');
+          
+          if (events.length > 0) {
+            html += '<table><tr><th>Type</th><th>Domain</th><th>Payout</th><th>Category</th><th>Timestamp</th></tr>';
+            events.slice(-20).reverse().forEach(e => {
+              const payout = e.payout ? `$${e.payout.userShare.toFixed(4)}` : 'N/A';
+              const category = e.payout ? e.payout.categoryName : 'Unknown';
+              const time = new Date(e.timestamp || e.savedAt).toLocaleString();
+              html += `<tr><td>${e.type}</td><td>${e.domain || 'N/A'}</td><td>${payout}</td><td>${category}</td><td>${time}</td></tr>`;
+            });
+            html += '</table>';
+          } else {
+            html += log('No events found. Chrome extension may not be running.', 'info');
+          }
+          
+          output.innerHTML = html;
+          db.close();
+        };
+        
+        request.onerror = () => {
+          output.innerHTML = log(`❌ Error: ${request.error}`, 'error');
+          db.close();
+        };
+      } catch (error) {
+        output.innerHTML = log(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function countEvents() {
+      const output = document.getElementById('eventsOutput');
+      output.innerHTML = log('Counting events...', 'info');
+      
+      try {
+        const db = await openDB();
+        const tx = db.transaction(['events'], 'readonly');
+        const store = tx.objectStore('events');
+        const request = store.count();
+        
+        request.onsuccess = () => {
+          const count = request.result;
+          output.innerHTML = log(`<span class="stat">Total Events: <span class="stat-value">${count}</span></span>`, 'success');
+          db.close();
+        };
+        
+        request.onerror = () => {
+          output.innerHTML = log(`❌ Error: ${request.error}`, 'error');
+          db.close();
+        };
+      } catch (error) {
+        output.innerHTML = log(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function clearEvents() {
+      if (!confirm('Are you sure you want to clear all events?')) return;
+      
+      const output = document.getElementById('eventsOutput');
+      output.innerHTML = log('Clearing events...', 'info');
+      
+      try {
+        const db = await openDB();
+        const tx = db.transaction(['events'], 'readwrite');
+        const store = tx.objectStore('events');
+        const request = store.clear();
+        
+        request.onsuccess = () => {
+          output.innerHTML = log('✅ All events cleared', 'success');
+          db.close();
+        };
+        
+        request.onerror = () => {
+          output.innerHTML = log(`❌ Error: ${request.error}`, 'error');
+          db.close();
+        };
+      } catch (error) {
+        output.innerHTML = log(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function viewWallet() {
+      const output = document.getElementById('walletOutput');
+      output.innerHTML = log('Loading wallet...', 'info');
+      
+      try {
+        const db = await openDB();
+        const tx = db.transaction(['wallet'], 'readonly');
+        const store = tx.objectStore('wallet');
+        const request = store.get('balance');
+        
+        request.onsuccess = () => {
+          const wallet = request.result;
+          let html = '';
+          
+          if (wallet) {
+            html += log('✅ Wallet found', 'success');
+            html += `<div class="stat">Balance: <span class="stat-value">$${wallet.balance.toFixed(4)}</span></div>`;
+            html += `<div class="stat">Infrastructure: <span class="stat-value">$${(wallet.infraTotal || 0).toFixed(4)}</span></div>`;
+            html += `<div class="stat">Treasury: <span class="stat-value">$${(wallet.treasuryTotal || 0).toFixed(4)}</span></div>`;
+            html += `<div class="stat">Total Value: <span class="stat-value">$${(wallet.balance + (wallet.infraTotal || 0) + (wallet.treasuryTotal || 0)).toFixed(4)}</span></div>`;
+            html += log(`Last Updated: ${new Date(wallet.lastUpdated).toLocaleString()}`, 'info');
+          } else {
+            html += log('⚠️ Wallet not initialized', 'error');
+          }
+          
+          output.innerHTML = html;
+          db.close();
+        };
+        
+        request.onerror = () => {
+          output.innerHTML = log(`❌ Error: ${request.error}`, 'error');
+          db.close();
+        };
+      } catch (error) {
+        output.innerHTML = log(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function resetWallet() {
+      if (!confirm('Are you sure you want to reset the wallet to zero?')) return;
+      
+      const output = document.getElementById('walletOutput');
+      output.innerHTML = log('Resetting wallet...', 'info');
+      
+      try {
+        const db = await openDB();
+        const tx = db.transaction(['wallet'], 'readwrite');
+        const store = tx.objectStore('wallet');
+        const wallet = {
+          id: 'balance',
+          balance: 0,
+          lastUpdated: Date.now(),
+          infraTotal: 0,
+          treasuryTotal: 0
+        };
+        const request = store.put(wallet);
+        
+        request.onsuccess = () => {
+          output.innerHTML = log('✅ Wallet reset to zero', 'success');
+          db.close();
+        };
+        
+        request.onerror = () => {
+          output.innerHTML = log(`❌ Error: ${request.error}`, 'error');
+          db.close();
+        };
+      } catch (error) {
+        output.innerHTML = log(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function addTestEvent() {
+      const output = document.getElementById('testOutput');
+      output.innerHTML = log('Adding test event...', 'info');
+      
+      try {
+        const db = await openDB();
+        const tx = db.transaction(['events', 'wallet'], 'readwrite');
+        const eventsStore = tx.objectStore('events');
+        const walletStore = tx.objectStore('wallet');
+        
+        const now = Date.now();
+        const testEvent = {
+          id: `${now}-${Math.random().toString(16).slice(2)}`,
+          type: 'visit',
+          domain: 'google.com',
+          url: 'https://www.google.com',
+          timestamp: now,
+          savedAt: now,
+          source: 'test',
+          payout: {
+            userShare: 0.0093,
+            infra: 0.0017,
+            treasury: 0.0006,
+            total: 0.0116,
+            categoryName: 'Ad-Driven Big Tech'
+          }
+        };
+        
+        eventsStore.add(testEvent);
+        
+        // Update wallet
+        const walletRequest = walletStore.get('balance');
+        walletRequest.onsuccess = () => {
+          const wallet = walletRequest.result || { id: 'balance', balance: 0, infraTotal: 0, treasuryTotal: 0, lastUpdated: now };
+          wallet.balance += testEvent.payout.userShare;
+          wallet.infraTotal = (wallet.infraTotal || 0) + testEvent.payout.infra;
+          wallet.treasuryTotal = (wallet.treasuryTotal || 0) + testEvent.payout.treasury;
+          wallet.lastUpdated = now;
+          walletStore.put(wallet);
+        };
+        
+        tx.oncomplete = () => {
+          output.innerHTML = log('✅ Test event added successfully', 'success');
+          db.close();
+        };
+        
+        tx.onerror = () => {
+          output.innerHTML = log(`❌ Error: ${tx.error}`, 'error');
+          db.close();
+        };
+      } catch (error) {
+        output.innerHTML = log(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function addTestEvents() {
+      const output = document.getElementById('testOutput');
+      output.innerHTML = log('Adding 10 test events...', 'info');
+      
+      const domains = [
+        { domain: 'google.com', type: 'search', category: 'Ad-Driven Big Tech', payout: 0.0093 },
+        { domain: 'youtube.com', type: 'youtube_watch', category: 'Ad-Driven Big Tech', payout: 0.0093 },
+        { domain: 'chat.openai.com', type: 'interaction', category: 'AI Subscription Platforms', payout: 0.0723 },
+        { domain: 'webmd.com', type: 'visit', category: 'Healthcare / Risk Analytics', payout: 0.2740 },
+        { domain: 'amazon.com', type: 'visit', category: 'People-Search / Retail Data', payout: 0.0004 },
+        { domain: 'paypal.com', type: 'visit', category: 'Loyalty / Financial Platforms', payout: 0.0548 },
+        { domain: 'facebook.com', type: 'social_visit', category: 'Ad-Driven Big Tech', payout: 0.0093 },
+        { domain: 'salesforce.com', type: 'visit', category: 'Enterprise AI / Automation', payout: 0.2192 },
+        { domain: 'instagram.com', type: 'social_visit', category: 'Ad-Driven Big Tech', payout: 0.0093 },
+        { domain: 'claude.ai', type: 'interaction', category: 'AI Subscription Platforms', payout: 0.0723 }
+      ];
+      
+      try {
+        const db = await openDB();
+        
+        for (const item of domains) {
+          const tx = db.transaction(['events', 'wallet'], 'readwrite');
+          const eventsStore = tx.objectStore('events');
+          const walletStore = tx.objectStore('wallet');
+          
+          const now = Date.now() + domains.indexOf(item) * 1000;
+          const testEvent = {
+            id: `${now}-${Math.random().toString(16).slice(2)}`,
+            type: item.type,
+            domain: item.domain,
+            url: `https://${item.domain}`,
+            timestamp: now,
+            savedAt: now,
+            source: 'test',
+            payout: {
+              userShare: item.payout,
+              infra: item.payout * 0.1875,
+              treasury: item.payout * 0.0625,
+              total: item.payout * 1.25,
+              categoryName: item.category
+            }
+          };
+          
+          eventsStore.add(testEvent);
+          
+          const walletRequest = walletStore.get('balance');
+          walletRequest.onsuccess = () => {
+            const wallet = walletRequest.result || { id: 'balance', balance: 0, infraTotal: 0, treasuryTotal: 0, lastUpdated: now };
+            wallet.balance += testEvent.payout.userShare;
+            wallet.infraTotal = (wallet.infraTotal || 0) + testEvent.payout.infra;
+            wallet.treasuryTotal = (wallet.treasuryTotal || 0) + testEvent.payout.treasury;
+            wallet.lastUpdated = now;
+            walletStore.put(wallet);
+          };
+          
+          await new Promise(resolve => {
+            tx.oncomplete = resolve;
+          });
+        }
+        
+        output.innerHTML = log('✅ 10 test events added successfully', 'success');
+        db.close();
+      } catch (error) {
+        output.innerHTML = log(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function simulateBrowsing() {
+      const output = document.getElementById('testOutput');
+      output.innerHTML = log('Simulating browsing session...', 'info');
+      await addTestEvents();
+      output.innerHTML += log('✅ Browsing session simulated. Check Events and Wallet.', 'success');
+    }
+
+    async function deleteDatabase() {
+      if (!confirm('⚠️ WARNING: This will permanently delete the entire LivePay database. Are you sure?')) return;
+      
+      const output = document.getElementById('managementOutput');
+      output.innerHTML = log('Deleting database...', 'info');
+      
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      
+      request.onsuccess = () => {
+        output.innerHTML = log('✅ Database deleted successfully. Refresh the page to reinitialize.', 'success');
+      };
+      
+      request.onerror = () => {
+        output.innerHTML = log(`❌ Error: ${request.error}`, 'error');
+      };
+      
+      request.onblocked = () => {
+        output.innerHTML = log('⚠️ Database deletion blocked. Close all tabs using the database and try again.', 'error');
+      };
+    }
+
+    async function reinitializeDatabase() {
+      const output = document.getElementById('managementOutput');
+      output.innerHTML = log('Reinitializing database...', 'info');
+      
+      try {
+        const db = await openDB();
+        output.innerHTML = log('✅ Database reinitialized successfully', 'success');
+        db.close();
+        await checkDatabase();
+      } catch (error) {
+        output.innerHTML = log(`❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    // Auto-check database on load
+    window.addEventListener('load', () => {
+      checkDatabase();
+      countEvents();
+      viewWallet();
+    });
+  </script>
+</body>
+</html>

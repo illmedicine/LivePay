@@ -8,12 +8,14 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { Platform } from 'react-native';
 
+import { watchEvents } from '@/constants/BrowserStorage';
 import {
     getLivePayState,
     ingestLivePayActivityEvent,
     startLivePayEventMode,
     startLivePayMockRealtime,
     subscribeLivePayState,
+    updateWalletFromIndexedDB,
 } from '@/constants/LivePayMock';
 
 function formatUsd(amount: number) {
@@ -29,41 +31,112 @@ export default function WalletScreen() {
     if (Platform.OS === 'web') {
       let es: EventSource | null = null;
       let cancelled = false;
+      let unwatch: (() => void) | null = null;
 
       (async () => {
         try {
           const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
           const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 
-          if (!isLocalhost) {
-            startLivePayMockRealtime();
-            return;
-          }
-
-          const res = await fetch('http://localhost:4317/oauth/google/pairing-token');
-          const json = (await res.json()) as { ok?: boolean; token?: string };
-          if (cancelled) return;
-
-          const token = json && typeof json.token === 'string' ? json.token : '';
-          if (!token) {
-            startLivePayMockRealtime();
-            return;
-          }
-
-          startLivePayEventMode();
-
-          es = new EventSource(`http://localhost:4317/events?token=${encodeURIComponent(token)}`);
-          es.onmessage = (msg) => {
-            try {
-              const event = JSON.parse(msg.data);
-              if (event && typeof event === 'object') {
-                ingestLivePayActivityEvent(event);
+          // First, check if Chrome extension has any data
+          console.log('🔍 LivePay App: Checking for Chrome extension data...');
+          
+          let hasExtensionData = false;
+          try {
+            // Check if IndexedDB has livepay-events database with data
+            const databases = await indexedDB.databases();
+            const livepayDb = databases.find(db => db.name === 'livepay-events');
+            
+            if (livepayDb) {
+              console.log('✅ LivePay App: Found Chrome extension database');
+              
+              // Check if it has events
+              const { getEvents } = await import('@/constants/BrowserStorage');
+              const events = await getEvents();
+              hasExtensionData = events.length > 0;
+              
+              if (hasExtensionData) {
+                console.log(`✅ LivePay App: Found ${events.length} events from Chrome extension`);
+              } else {
+                console.log('⚠️ LivePay App: Database exists but no events yet');
               }
-            } catch {
-              // ignore
+            } else {
+              console.log('ℹ️ LivePay App: No Chrome extension database found');
             }
-          };
-        } catch {
+          } catch (err) {
+            console.log('ℹ️ LivePay App: Unable to check for extension data', err);
+          }
+
+          // Start in event mode and watch IndexedDB
+          startLivePayEventMode();
+          console.log('👀 LivePay App: Starting to watch IndexedDB for events');
+          
+          // Load wallet balance from IndexedDB
+          await updateWalletFromIndexedDB();
+          
+          unwatch = await watchEvents((events) => {
+            console.log('📊 LivePay App: Received', events.length, 'events from IndexedDB');
+            if (events.length > 0) {
+              console.log('🔄 LivePay App: Processing events from Chrome extension');
+              // Process all events
+              events.forEach(event => {
+                if (event && typeof event === 'object') {
+                  ingestLivePayActivityEvent(event);
+                }
+              });
+              console.log('✅ LivePay App: Loaded', events.length, 'real events from extension');
+              // Update wallet after processing events
+              updateWalletFromIndexedDB();
+              
+              // Mark that we have extension data
+              hasExtensionData = true;
+            }
+          });
+
+          // Additionally, try to connect to local server if available
+          if (isLocalhost) {
+            try {
+              const res = await fetch('http://localhost:4317/oauth/google/pairing-token', { 
+                signal: AbortSignal.timeout(2000) 
+              });
+              const json = (await res.json()) as { ok?: boolean; token?: string };
+              if (cancelled) return;
+
+              const token = json && typeof json.token === 'string' ? json.token : '';
+              if (token) {
+                console.log('🔌 LivePay App: Connected to local server');
+                hasExtensionData = true; // Server connection counts as having data
+                es = new EventSource(`http://localhost:4317/events?token=${encodeURIComponent(token)}`);
+                es.onmessage = (msg) => {
+                  try {
+                    const event = JSON.parse(msg.data);
+                    if (event && typeof event === 'object') {
+                      ingestLivePayActivityEvent(event);
+                    }
+                  } catch {
+                    // ignore
+                  }
+                };
+              }
+            } catch (err) {
+              console.log('ℹ️ LivePay App: Local server not available');
+            }
+          }
+          
+          // Only start mock data if no extension data was found after a brief delay
+          setTimeout(() => {
+            if (!hasExtensionData && !cancelled) {
+              console.log('ℹ️ LivePay App: No connector data found. Starting demo mode with mock data.');
+              console.log('💡 Install the Chrome extension to see real earnings!');
+              startLivePayMockRealtime();
+            } else if (hasExtensionData) {
+              console.log('✅ LivePay App: Using real data from connector. Mock data disabled.');
+            }
+          }, 1000); // Wait 1 second to ensure extension data is checked
+          
+        } catch (err) {
+          console.error('❌ LivePay App: Error setting up event watchers', err);
+          // Only fall back to mock if there's an error
           startLivePayMockRealtime();
         }
       })();
@@ -71,10 +144,12 @@ export default function WalletScreen() {
       return () => {
         cancelled = true;
         if (es) es.close();
+        if (unwatch) unwatch();
       };
+    } else {
+      // For non-web platforms (iOS/Android), use mock data
+      startLivePayMockRealtime();
     }
-
-    startLivePayMockRealtime();
   }, []);
 
   const liveState = useSyncExternalStore(subscribeLivePayState, getLivePayState, getLivePayState);

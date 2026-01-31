@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>LivePay Extension Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+    .test-button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .log {
+      background: #f0f0f0;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .success { color: green; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>LivePay Extension Diagnostic Test</h1>
+  
+  <h2>Quick Tests</h2>
+  <button class="test-button" onclick="testExtension()">1. Test Extension Connection</button>
+  <button class="test-button" onclick="testEvent()">2. Inject Test Event</button>
+  <button class="test-button" onclick="checkIndexedDB()">3. Check IndexedDB Contents</button>
+  <button class="test-button" onclick="clearLogs()">Clear Logs</button>
+  
+  <h2>Diagnostic Output</h2>
+  <div id="logs" class="log"></div>
+  
+  <h2>Instructions</h2>
+  <ol>
+    <li>Open Chrome DevTools (F12)</li>
+    <li>Go to Application tab → Service Workers</li>
+    <li>Find "LivePay Activity Stream" and check if it's running</li>
+    <li>Click "1. Test Extension Connection" below</li>
+    <li>Check the DevTools console for LivePay messages (look for ✨, 📊, ✅, ❌ emojis)</li>
+    <li>Click "2. Inject Test Event" to create a test entry</li>
+    <li>Check Application → IndexedDB → livepay-events to see if data was saved</li>
+  </ol>
+
+  <script>
+    const logsDiv = document.getElementById('logs');
+
+    function log(message, isError = false) {
+      const line = document.createElement('div');
+      line.textContent = message;
+      if (isError) {
+        line.classList.add('error');
+      } else {
+        line.classList.add('success');
+      }
+      logsDiv.appendChild(line);
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+
+    function clearLogs() {
+      logsDiv.innerHTML = '';
+    }
+
+    function testExtension() {
+      log('Testing extension connection...');
+      
+      // Try to send a message to the extension
+      chrome.runtime.sendMessage(
+        chrome.runtime.id,
+        { type: 'PING' },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            log('❌ Extension connection failed: ' + chrome.runtime.lastError.message, true);
+          } else {
+            log('✅ Extension is responding');
+          }
+        }
+      );
+
+      // Also log that we're testing
+      log('📋 Extension ID: ' + chrome.runtime.id);
+    }
+
+    function testEvent() {
+      log('Injecting test event...');
+      chrome.runtime.sendMessage(
+        chrome.runtime.id,
+        { type: 'TEST_EVENT' },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            log('❌ Test event failed: ' + chrome.runtime.lastError.message, true);
+          } else {
+            log('✅ Test event injected. Check DevTools console for "🧪 LivePay" message');
+            log('💡 Tip: Check Application → IndexedDB → livepay-events → events table');
+          }
+        }
+      );
+    }
+
+    async function checkIndexedDB() {
+      log('Checking IndexedDB contents...');
+      
+      try {
+        const db = await new Promise((resolve, reject) => {
+          const req = indexedDB.open('livepay-events', 1);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+
+        const transaction = db.transaction(['events'], 'readonly');
+        const store = transaction.objectStore('events');
+        
+        const events = await new Promise((resolve, reject) => {
+          const req = store.getAll();
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+
+        log(`📊 Found ${events.length} events in IndexedDB:`, false);
+        events.forEach((event, i) => {
+          log(`  [${i}] ${event.type || 'unknown'}: ${event.domain || event.query || event.source || '?'} (${new Date(event.savedAt || event.timestamp || 0).toLocaleTimeString()})`, false);
+        });
+
+        if (events.length === 0) {
+          log('⚠️ No events found - extension may not be saving events', true);
+        }
+      } catch (error) {
+        log('❌ Error checking IndexedDB: ' + error.message, true);
+      }
+    }
+
+    // Auto-check on load
+    window.addEventListener('load', () => {
+      log('🎯 Test page loaded. Extension ID available: ' + (typeof chrome !== 'undefined' && typeof chrome.runtime !== 'undefined'));
+    });
+  </script>
+</body>
+</html>
